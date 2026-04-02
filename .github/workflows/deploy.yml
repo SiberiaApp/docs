@@ -1,0 +1,90 @@
+name: Deploy Docs
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one concurrent deployment per target; cancel in-progress runs
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Build for GitHub Pages ────────────────────────────────────────────────
+  build-github-pages:
+    name: Build (GitHub Pages)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable Corepack (Yarn 4)
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Build
+        run: yarn build
+        env:
+          # Only set basePath when NOT using a custom domain on GitHub Pages.
+          # If you have a custom domain, remove this env var (leave it blank or delete).
+          # If deploying to https://<user>.github.io/<repo>, set to /<repo>.
+          NEXT_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  # ── Deploy to GitHub Pages ────────────────────────────────────────────────
+  deploy-github-pages:
+    name: Deploy (GitHub Pages)
+    needs: build-github-pages
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
+
+  # ── Build & Deploy to EdgeOne Pages ──────────────────────────────────────
+  deploy-edgeone:
+    name: Deploy (EdgeOne Pages)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable Corepack (Yarn 4)
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Build
+        run: yarn build
+        # No NEXT_BASE_PATH — EdgeOne Pages uses your custom domain (no sub-path)
+
+      - name: Deploy to EdgeOne Pages
+        run: npx edgeone pages deploy ./out -n reareye-docs -t ${{ secrets.EDGEONE_API_TOKEN }}
